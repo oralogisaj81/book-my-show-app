@@ -1,0 +1,102 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --color-ink-950: #05070d;
+  --color-ink-900: #0a0e17;
+  --color-ink-850: #0d1220;
+  --color-ink-800: #10162a;
+  --color-ink-700: #161d35;
+  --color-ink-600: #202944;
+  --color-ink-500: #323e63;
+  --color-ink-400: #4b5a8a;
+
+  --color-mist-100: #f5f6fb;
+  --color-mist-200: #e4e7f2;
+  --color-mist-300: #c3c8dd;
+  --color-mist-400: #9aa3c2;
+  --color-mist-500: #737ea3;
+
+  --color-brand-300: #ff9d7a;
+  --color-brand-400: #ff7a52;
+  --color-brand-500: #ff5a36;
+  --color-brand-600: #e8431f;
+  --color-brand-700: #c22f10;
+
+  --color-gold-300: #ffe08a;
+  --color-gold-400: #ffcb47;
+  --color-gold-500: #f5b400;
+
+  --color-teal-300: #7bf0d2;
+  --color-teal-400: #3ddbb0;
+  --color-teal-500: #17b891;
+
+  --shadow-glow: 0 0 0 1px rgba(255, 90, 54, 0.15), 0 20px 60px -20px rgba(255, 90, 54, 0.35);
+  --shadow-card: 0 8px 30px -12px rgba(0, 0, 0, 0.55);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-ink-700);
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-ink-950 text-mist-100 antialiased;
+    font-family: var(--font-sans);
+    margin: 0;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(255, 90, 54, 0.12), transparent),
+      radial-gradient(ellipse 60% 40% at 100% 0%, rgba(23, 184, 145, 0.08), transparent);
+    background-attachment: fixed;
+  }
+
+  #root {
+    min-height: 100svh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  ::selection {
+    background-color: var(--color-brand-500);
+    color: white;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--color-ink-900);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-ink-600);
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-ink-500);
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .glass {
+    background: rgba(16, 22, 42, 0.65);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+
+  .mask-fade-b {
+    mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+  }
+}
