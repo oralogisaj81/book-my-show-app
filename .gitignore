@@ -35,3 +35,6 @@ e2e/playwright-report
 *.njsproj
 *.sln
 *.sw?
+
+# k6 load-test artifacts — run outputs, not source
+load-test/reports

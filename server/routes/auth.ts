@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply } from 'fastify'
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { ApiError } from '../../shared/lib/apiError'
 import { generateId } from '../../shared/lib/id'
 import { requireAuth } from '../lib/authGuard'
@@ -8,7 +8,31 @@ import { createUser, findByEmail, findById, toPublicUser } from '../services/use
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const MIN_PASSWORD_LENGTH = 8
-const AUTH_RATE_LIMIT = { config: { rateLimit: { max: 10, timeWindow: '15 minutes' } } }
+
+// Keyed by IP+email (not IP alone) so this throttles repeated attempts against ONE account
+// from one source — the actual brute-force shape — rather than capping the total number of
+// distinct legitimate signups/logins that can happen behind a shared IP (office NAT, campus
+// network, mobile carrier CGNAT). Found via load testing: with IP-only keying, ~125
+// concurrent load-test VUs sharing one source IP exhausted the whole budget after the first
+// 10 signups, regardless of how many were different accounts — the same would happen to any
+// group of real users signing up/logging in from behind one shared IP within a 15-minute
+// window. `hook: 'preHandler'` (rather than fastify-rate-limit's default `onRequest`) is
+// required so `request.body` is parsed by the time the key generator reads `email` from it.
+const AUTH_RATE_LIMIT = {
+  config: {
+    rateLimit: {
+      max: 10,
+      timeWindow: '15 minutes',
+      hook: 'preHandler' as const,
+      keyGenerator: (request: FastifyRequest) => {
+        const email = typeof (request.body as { email?: unknown })?.email === 'string'
+          ? (request.body as { email: string }).email.trim().toLowerCase()
+          : ''
+        return `${request.ip}:${email}`
+      },
+    },
+  },
+}
 
 function setSessionCookie(reply: FastifyReply, userId: string): void {
   const { value } = signSession(userId)

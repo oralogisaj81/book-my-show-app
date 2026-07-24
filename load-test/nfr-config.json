@@ -1,0 +1,44 @@
+{
+  "_comment": "No production traffic history exists yet for this app (personal project) — user opted for 'small-app defaults' via an explicit AskUserQuestion choice rather than exact numbers. Every number here is a stated assumption, not a measured fact; see 'assumptions' below and revisit once real traffic data exists.",
+  "app": "CineHall",
+  "baseUrl": "http://localhost:4000",
+  "throughput": {
+    "currentTps": 5,
+    "projectedTps": 15,
+    "preAllocatedVUs": 75,
+    "maxVUs": 120,
+    "rampToCurrentDuration": "1m",
+    "holdCurrentDuration": "3m",
+    "rampToProjectedDuration": "1m",
+    "holdProjectedDuration": "3m",
+    "rampDownDuration": "30s"
+  },
+  "concurrency": {
+    "peakConcurrentUsers": 50,
+    "rampDuration": "1m",
+    "soakDuration": "5m",
+    "rampDownDuration": "30s"
+  },
+  "latency": {
+    "browse_movies": { "p95": 500, "p99": 1000 },
+    "get_movie": { "p95": 500, "p99": 1000 },
+    "browse_shows": { "p95": 600, "p99": 1200 },
+    "auth_signup": { "p95": 900, "p99": 1500 },
+    "view_bookings": { "p95": 500, "p99": 1000 },
+    "get_seatmap": { "p95": 600, "p99": 1200 },
+    "hold_seats": { "p95": 1200, "p99": 2000 },
+    "confirm_booking": { "p95": 1200, "p99": 2000 }
+  },
+  "errorRateThreshold": 0.01,
+  "contention": {
+    "enabled": true,
+    "concurrentVUs": 20
+  },
+  "assumptions": [
+    "No production traffic data exists yet — this is a pre-launch personal project. Current/projected TPS, peak concurrent users, and latency targets are all reasonable defaults for a small booking app, not measured numbers. Revisit once real usage data exists.",
+    "currentTps=5, projectedTps=15 (3x headroom) modeled as weighted customer journeys/sec (70% browse-only, 20% view-bookings, 10% full seat-hold+booking-confirm), matching the app's real traffic shape rather than raw HTTP req/s.",
+    "preAllocatedVUs/maxVUs sized as target_rate * ~2.5s avg iteration duration (incl. think-time sleeps) * ~1.75 safety factor — recompute if journey sleep durations or the browse/checkout mix change materially.",
+    "auth_signup latency target (p95<900ms) accounts for this app's deliberate scrypt password hashing cost (server/lib/password.ts) — expect this to be one of the slower flows by design, not a bug.",
+    "peakConcurrentUsers=50 with a 5-minute soak hold — long enough to surface Postgres connection-pool exhaustion or slow leaks, per the skill's guidance that these rarely show up in the first 60 seconds."
+  ]
+}

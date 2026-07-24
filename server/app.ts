@@ -19,9 +19,18 @@ export function createApp() {
   const app = Fastify({ logger: true })
 
   app.register(fastifyCookie)
-  // Generous global default; /api/auth/login and /signup override this with a much tighter
-  // limit at the route level (see routes/auth.ts) since those are the actual brute-force targets.
-  app.register(fastifyRateLimit, { max: 300, timeWindow: '1 minute' })
+  // Applies to every route by default (fastify-rate-limit's `global: true`), so this is a
+  // blanket abuse ceiling, not a per-endpoint budget — /api/auth/login and /signup override
+  // it with a much tighter, account-aware limit at the route level (see routes/auth.ts) since
+  // those are the actual brute-force targets. 300/min (5 req/s) was found via load testing
+  // (load-test/reports/) to be far below this app's own stated throughput NFR: the projected
+  // 15 journeys/sec traffic-mix scenario alone needs ~50 req/s, and load-test/nfr-config.json's
+  // peakConcurrentUsers=50 soak scenario adds a comparable amount of *concurrent* background
+  // request volume on top of that (50 continuously-browsing sessions, not idle) — the combined
+  // peak was measured around 125 req/s, well above a first-pass fix of 6000/min (100 req/s)
+  // that only accounted for the throughput scenario in isolation. Raised again with ~2x
+  // headroom over the measured combined peak; revisit alongside nfr-config.json if that changes.
+  app.register(fastifyRateLimit, { max: 15000, timeWindow: '1 minute' })
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof ApiError) {
@@ -30,9 +39,11 @@ export function createApp() {
     // Framework-thrown errors (rate-limit's 429, Fastify's own body-parser
     // errors) carry their own correct statusCode — falling through to a flat
     // 500 masked a real "rate limited" as a generic server error.
-    const status = typeof error.statusCode === 'number' ? error.statusCode : 500
+    const err = error as { statusCode?: unknown; message?: unknown }
+    const status = typeof err.statusCode === 'number' ? err.statusCode : 500
     app.log.error(error)
-    return reply.status(status).send({ code: 'INTERNAL_ERROR', message: error.message ?? 'Something went wrong.' })
+    const message = typeof err.message === 'string' ? err.message : 'Something went wrong.'
+    return reply.status(status).send({ code: 'INTERNAL_ERROR', message })
   })
 
   app.register(
