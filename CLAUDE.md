@@ -54,6 +54,21 @@ Two things worth knowing before changing this suite:
   with no API surface: promoting a user to admin, and force-expiring a seat hold
   (`HOLD_DURATION_MS` is 5 minutes — the lifecycle spec doesn't wait for it in real time).
 
+`load-test/` is a k6 suite (not wired into `npm run test:*`, run via its own scripts)
+against a running server — start one with `npm run dev` or `npm start` first:
+
+```bash
+load-test/scripts/run-load-test.sh              # smoke test, then full NFR-calibrated mixed-traffic run, then a compliance report
+load-test/scripts/run-seat-hold-contention.sh    # dedicated seat-hold contention scenario, run separately from the traffic mix
+k6 run load-test/smoke.js                        # just the smoke test (1 VU, 5 fixed iterations) — correctness, not load
+```
+
+Both scripts default `BASE_URL` to `http://localhost:4000` and refuse to run against a
+non-localhost target unless `ALLOW_REMOTE=1` is set, as a guard against accidentally
+load-testing a deployed environment. Traffic mix and thresholds are calibrated from
+`load-test/nfr-config.json`; reports land in `load-test/reports/<timestamp>[-label]/`
+(set `REPORT_LABEL` to tag a run, e.g. for before/after comparisons).
+
 ## Architecture
 
 **Single artifact, no separate frontend/backend deploys.** `npm run build` compiles the
