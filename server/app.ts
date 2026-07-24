@@ -27,8 +27,12 @@ export function createApp() {
     if (error instanceof ApiError) {
       return reply.status(statusForErrorCode(error.code)).send({ code: error.code, message: error.message })
     }
+    // Framework-thrown errors (rate-limit's 429, Fastify's own body-parser
+    // errors) carry their own correct statusCode — falling through to a flat
+    // 500 masked a real "rate limited" as a generic server error.
+    const status = typeof error.statusCode === 'number' ? error.statusCode : 500
     app.log.error(error)
-    return reply.status(500).send({ code: 'INTERNAL_ERROR', message: 'Something went wrong.' })
+    return reply.status(status).send({ code: 'INTERNAL_ERROR', message: error.message ?? 'Something went wrong.' })
   })
 
   app.register(

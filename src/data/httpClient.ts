@@ -2,7 +2,11 @@ import { ApiError } from './api'
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
-    headers: { 'Content-Type': 'application/json' },
+    // Only set the JSON content-type when there's actually a JSON body —
+    // Fastify's default body parser rejects `Content-Type: application/json`
+    // on an empty body (FST_ERR_CTP_EMPTY_JSON_BODY), which broke every
+    // bodyless POST (logout, release hold, cancel booking).
+    headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
     ...init,
   })
   if (res.status === 204) return undefined as T

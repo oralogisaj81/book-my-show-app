@@ -21,6 +21,10 @@ dist-server
 # Drizzle
 drizzle/meta
 
+# Playwright (e2e) — regenerated on every run
+e2e/test-results
+e2e/playwright-report
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

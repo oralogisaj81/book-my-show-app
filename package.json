@@ -12,7 +12,11 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx server/db/migrate.ts",
     "db:seed": "tsx server/db/seed.ts",
-    "admin:promote": "tsx server/scripts/makeAdmin.ts"
+    "admin:promote": "tsx server/scripts/makeAdmin.ts",
+    "test:e2e": "playwright test --config e2e/playwright.config.js",
+    "test:e2e:headless": "E2E_HEADLESS=1 playwright test --config e2e/playwright.config.js",
+    "test:e2e:ui": "playwright test --config e2e/playwright.config.js --ui",
+    "test:e2e:report": "playwright show-report e2e/playwright-report"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
@@ -36,6 +40,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24.13.2",
     "@types/pg": "^8.20.0",
