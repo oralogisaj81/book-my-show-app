@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CineHall security test report</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    max-width: 900px; margin: 0 auto; padding: 2.5rem 1.5rem 5rem;
+    line-height: 1.55; color: #1c1c1e; background: #fff;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e6e6e6; background: #121212; }
+    table { border-color: #333 !important; }
+    th { background: #1f1f1f !important; }
+    tr:nth-child(even) td { background: #181818 !important; }
+    code, pre { background: #1e1e1e !important; color: #e6e6e6 !important; }
+    hr { border-color: #333 !important; }
+  }
+  h1 { font-size: 1.7rem; border-bottom: 2px solid #ddd; padding-bottom: .4rem; }
+  h2 { font-size: 1.3rem; margin-top: 2rem; border-bottom: 1px solid #ddd; padding-bottom: .3rem; }
+  h3 { font-size: 1.05rem; margin-top: 1.8rem; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: .92rem; }
+  th, td { border: 1px solid #ccc; padding: .45rem .7rem; text-align: left; vertical-align: top; }
+  th { background: #f2f2f2; }
+  tr:nth-child(even) td { background: #fafafa; }
+  code { background: #f0f0f0; padding: .1rem .35rem; border-radius: 3px; font-size: .88em; }
+  pre { background: #f5f5f5; padding: .9rem 1rem; border-radius: 6px; overflow-x: auto; font-size: .82rem; white-space: pre-wrap; word-break: break-word; }
+  pre code { background: none; padding: 0; }
+  hr { border: none; border-top: 1px solid #ddd; margin: 2rem 0; }
+  .badge { display: inline-block; padding: .1rem .55rem; border-radius: 999px; font-size: .78rem; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>CineHall security test report</h1>
+<p>Generated: 2026-07-24T20:16:01.894Z</p>
+<h2>Executive summary</h2>
+<table>
+<tr><th>Severity</th><th>Count</th></tr>
+<tr><td><span class="badge" style="background:#ffe0e0">Critical</span></td><td>0</td></tr>
+<tr><td><span class="badge" style="background:#ffe9d6">High</span></td><td>2</td></tr>
+<tr><td><span class="badge" style="background:#fff6cf">Medium</span></td><td>8</td></tr>
+<tr><td><span class="badge" style="background:#e3f0ff">Low</span></td><td>5</td></tr>
+<tr><td><span class="badge" style="background:#eeeeee">Info</span></td><td>7</td></tr>
+</table>
+<h2>Findings</h2>
+
+<h3>Any authenticated user can release (cancel) another user&#39;s active seat hold</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#ffe9d6">High</span></li>
+  <li><strong>OWASP category</strong>: A01:2021 – Broken Access Control</li>
+  <li><strong>Location</strong>: <code>POST /api/holds/{id}/release</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: server/routes/holds.ts guards POST /api/holds/:id/release with requireAuth only — releaseHold() in server/services/seatLock.ts deletes the hold row by id with no ownership check. Any signed-in user who obtains another user&#39;s hold id can free their seats mid-checkout (a real state mutation, not just a read), letting the seats be grabbed by someone else while the original holder believes they are still reserved.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>POST release as attacker:
+POST http://localhost:4000/api/holds/hold_b9779651-671f-4acc-af3a-521a0911e47e/release
+Response: 204
+Response body: </code></pre>
+<p><strong>Recommended fix</strong>: In server/routes/holds.ts&#39;s /holds/:id/release handler, call getHold() first, compare holderId to request.userId, and throw ApiError(&#39;FORBIDDEN&#39;, ...) before calling releaseHold() on mismatch. Root cause worth fixing at the same time: POST /api/shows/:id/hold (server/routes/shows.ts) currently trusts a client-supplied `holderId` in the request body instead of deriving it from request.userId — CLAUDE.md documents that pattern (deriving userId from the session, never the body) as the norm for confirmBooking/cancelBooking/bookings/me, but the hold-creation route doesn&#39;t follow it, which is what makes holderId-based ownership checks meaningless without also fixing this.</p>
+<hr>
+
+<h3>2 High/Critical npm dependency vulnerabilities</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#ffe9d6">High</span></li>
+  <li><strong>OWASP category</strong>: A06:2021 – Vulnerable and Outdated Components</li>
+  <li><strong>Location</strong>: <code>package.json / package-lock.json</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: npm audit reported: react-router@7.12.0 - 8.2.0 (high), react-router-dom@&gt;=7.12.0-pre.0 (high)</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>npm audit --omit=dev --json
+High/Critical: react-router@7.12.0 - 8.2.0 (high), react-router-dom@&gt;=7.12.0-pre.0 (high)</code></pre>
+<p><strong>Recommended fix</strong>: Run `npm audit fix` where possible; for vulnerabilities without a compatible fix, evaluate whether the vulnerable code path is actually reachable in this app before deciding on an upgrade/replace/accept-risk call.</p>
+<hr>
+
+<h3>Any authenticated user can read another user&#39;s active seat hold</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#fff6cf">Medium</span></li>
+  <li><strong>OWASP category</strong>: A01:2021 – Broken Access Control</li>
+  <li><strong>Location</strong>: <code>GET /api/holds/{id}</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: server/routes/holds.ts guards GET /api/holds/:id with requireAuth only — server/services/seatLock.ts&#39;s getHold() never compares the hold&#39;s holderId against the caller. Any signed-in user who obtains a hold id (e.g. via the release check below, or by observing one in transit) can read the showId and seatIds of a hold they do not own.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>GET as attacker (owner-only resource):
+GET http://localhost:4000/api/holds/hold_b9779651-671f-4acc-af3a-521a0911e47e
+Response: 200
+Response body: {&quot;id&quot;:&quot;hold_b9779651-671f-4acc-af3a-521a0911e47e&quot;,&quot;showId&quot;:&quot;aurora-kurla-scr1__oppenheimer__d0__t2&quot;,&quot;seatIds&quot;:[&quot;A2&quot;],&quot;holderId&quot;:&quot;user_2d186859-8cd2-431d-b9c5-bbc30668e923&quot;,&quot;createdAt&quot;:&quot;2026-07-24 20:15:57.837+00&quot;,&quot;expiresAt&quot;:&quot;2026-07-24 20:20:57.837+00&quot;}</code></pre>
+<p><strong>Recommended fix</strong>: In server/routes/holds.ts, compare hold.holderId to request.userId after getHold() resolves and throw ApiError(&#39;FORBIDDEN&#39;, ...) on mismatch, the same pattern already used for bookings in server/services/booking.ts.</p>
+<hr>
+
+<h3>Logout cannot invalidate a session token before its natural 30-day expiry</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#fff6cf">Medium</span></li>
+  <li><strong>OWASP category</strong>: A07:2021 – Identification and Authentication Failures</li>
+  <li><strong>Location</strong>: <code>POST /api/auth/logout, server/lib/session.ts verifySession()</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: This app&#39;s stateless HMAC-signed session cookie (a deliberate choice per CLAUDE.md, to avoid a DB-backed session table) has no server-side revocation mechanism — verifySession() only checks the signature and expiresAt. /api/auth/logout only clears the cookie client-side; a token captured before logout (XSS, a synced/shared browser profile, a proxy log) remains fully valid for the rest of its 30-day SESSION_DURATION_MS window even after the user &quot;logs out&quot;.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>GET /api/auth/me replaying the pre-logout session cookie, after calling /api/auth/logout:
+GET http://localhost:4000/api/auth/me
+Response: 200
+Response body: {&quot;id&quot;:&quot;user_9fed242a-8997-43ab-8a80-08b503a1033d&quot;,&quot;name&quot;:&quot;Security Test 1784924155513_05qqdc&quot;,&quot;email&quot;:&quot;sec-attacker_1784924155513_05qqdc@example.invalid&quot;,&quot;isAdmin&quot;:false,&quot;createdAt&quot;:&quot;2026-07-24 20:15:55.650489+00&quot;}</code></pre>
+<p><strong>Recommended fix</strong>: If real logout-time revocation is wanted, add a minimal server-side check (e.g. a small denylist table of invalidated token signatures, or a per-user &quot;session epoch&quot;/tokenVersion column checked in verifySession() and bumped on logout) — this is the smallest change that preserves the existing stateless-cookie design for the common case while closing the post-logout replay window. Otherwise, document this as an accepted tradeoff and consider shortening SESSION_DURATION_MS.</p>
+<hr>
+
+<h3>Signup name field stores and returns raw HTML/script-shaped input unescaped</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#fff6cf">Medium</span></li>
+  <li><strong>OWASP category</strong>: A03:2021 – Injection (Stored XSS surface)</li>
+  <li><strong>Location</strong>: <code>POST /api/auth/signup (name), GET /api/auth/me</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: The API stores and returns the raw payload unsanitized. This repo&#39;s src/ has no dangerouslySetInnerHTML (checked statically), and React escapes text content by default, so this is not yet a confirmed exploit — it is a live surface that becomes one the moment any current or future component renders a user&#39;s name via dangerouslySetInnerHTML or similar (the name is rendered in several places: src/components/layout/ProfileMenu.tsx, src/pages/AccountPage.tsx, ticket components).</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>Signup with name = &quot;&lt;script&gt;alert(1)&lt;/script&gt;&quot;, then GET /api/auth/me:
+GET http://localhost:4000/api/auth/me
+Response: 200
+Response body: {&quot;id&quot;:&quot;user_5626e527-3f0f-4880-9f6d-00dd9e2b15c3&quot;,&quot;name&quot;:&quot;&lt;script&gt;alert(1)&lt;/script&gt;&quot;,&quot;email&quot;:&quot;xss_1784924160609_xss@example.invalid&quot;,&quot;isAdmin&quot;:false,&quot;createdAt&quot;:&quot;2026-07-24 20:16:00.747497+00&quot;}</code></pre>
+<p><strong>Recommended fix</strong>: Confirm every place a user&#39;s name is rendered uses React&#39;s default text interpolation, not dangerouslySetInnerHTML. Optionally sanitize/strip HTML server-side on write (server/routes/auth.ts) as defense-in-depth.</p>
+<hr>
+
+<h3>Missing X-Frame-Options or CSP frame-ancestors on a JSON API response</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#fff6cf">Medium</span></li>
+  <li><strong>OWASP category</strong>: A05:2021 – Security Misconfiguration</li>
+  <li><strong>Location</strong>: <code>/api/cities response headers</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: X-Frame-Options or CSP frame-ancestors was not present. Prevents clickjacking via iframe embedding.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>GET http://localhost:4000/api/cities
+Response headers: {
+  &quot;connection&quot;: &quot;keep-alive&quot;,
+  &quot;content-length&quot;: &quot;221&quot;,
+  &quot;content-type&quot;: &quot;application/json; charset=utf-8&quot;,
+  &quot;date&quot;: &quot;Fri, 24 Jul 2026 20:16:00 GMT&quot;,
+  &quot;keep-alive&quot;: &quot;timeout=72&quot;,
+  &quot;x-ratelimit-limit&quot;: &quot;15000&quot;,
+  &quot;x-ratelimit-remaining&quot;: &quot;14972&quot;,
+  &quot;x-ratelimit-reset&quot;: &quot;48&quot;
+}</code></pre>
+<p><strong>Recommended fix</strong>: Add X-Frame-Options or CSP frame-ancestors via a global Fastify onSend hook in server/app.ts (applies to both API and static-asset responses, since both are served by the same createApp() instance) — no need for an extra dependency like @fastify/helmet for a handful of static header values.</p>
+<hr>
+
+<h3>Missing Content-Security-Policy on a JSON API response</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#fff6cf">Medium</span></li>
+  <li><strong>OWASP category</strong>: A05:2021 – Security Misconfiguration</li>
+  <li><strong>Location</strong>: <code>/api/cities response headers</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: Content-Security-Policy was not present. Primary defense-in-depth layer against XSS/data-injection.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>GET http://localhost:4000/api/cities
+Response headers: {
+  &quot;connection&quot;: &quot;keep-alive&quot;,
+  &quot;content-length&quot;: &quot;221&quot;,
+  &quot;content-type&quot;: &quot;application/json; charset=utf-8&quot;,
+  &quot;date&quot;: &quot;Fri, 24 Jul 2026 20:16:00 GMT&quot;,
+  &quot;keep-alive&quot;: &quot;timeout=72&quot;,
+  &quot;x-ratelimit-limit&quot;: &quot;15000&quot;,
+  &quot;x-ratelimit-remaining&quot;: &quot;14972&quot;,
+  &quot;x-ratelimit-reset&quot;: &quot;48&quot;
+}</code></pre>
+<p><strong>Recommended fix</strong>: Add Content-Security-Policy via a global Fastify onSend hook in server/app.ts (applies to both API and static-asset responses, since both are served by the same createApp() instance) — no need for an extra dependency like @fastify/helmet for a handful of static header values.</p>
+<hr>
+
+<h3>Missing X-Frame-Options or CSP frame-ancestors on the served frontend HTML</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#fff6cf">Medium</span></li>
+  <li><strong>OWASP category</strong>: A05:2021 – Security Misconfiguration</li>
+  <li><strong>Location</strong>: <code>/ response headers</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: X-Frame-Options or CSP frame-ancestors was not present. Prevents clickjacking via iframe embedding.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>GET http://localhost:4000/
+Response headers: {
+  &quot;accept-ranges&quot;: &quot;bytes&quot;,
+  &quot;cache-control&quot;: &quot;public, max-age=0&quot;,
+  &quot;connection&quot;: &quot;keep-alive&quot;,
+  &quot;content-length&quot;: &quot;1038&quot;,
+  &quot;content-type&quot;: &quot;text/html; charset=utf-8&quot;,
+  &quot;date&quot;: &quot;Fri, 24 Jul 2026 20:16:00 GMT&quot;,
+  &quot;etag&quot;: &quot;W/\&quot;40e-19f95c4ee40\&quot;&quot;,
+  &quot;keep-alive&quot;: &quot;timeout=72&quot;,
+  &quot;last-modified&quot;: &quot;Fri, 24 Jul 2026 20:15:39 GMT&quot;,
+  &quot;x-ratelimit-limit&quot;: &quot;15000&quot;,
+  &quot;x-ratelimit-remaining&quot;: &quot;14971&quot;,
+  &quot;x-ratelimit-reset&quot;: &quot;48&quot;
+}</code></pre>
+<p><strong>Recommended fix</strong>: Add X-Frame-Options or CSP frame-ancestors via a global Fastify onSend hook in server/app.ts (applies to both API and static-asset responses, since both are served by the same createApp() instance) — no need for an extra dependency like @fastify/helmet for a handful of static header values.</p>
+<hr>
+
+<h3>Missing Content-Security-Policy on the served frontend HTML</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#fff6cf">Medium</span></li>
+  <li><strong>OWASP category</strong>: A05:2021 – Security Misconfiguration</li>
+  <li><strong>Location</strong>: <code>/ response headers</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: Content-Security-Policy was not present. Primary defense-in-depth layer against XSS/data-injection.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>GET http://localhost:4000/
+Response headers: {
+  &quot;accept-ranges&quot;: &quot;bytes&quot;,
+  &quot;cache-control&quot;: &quot;public, max-age=0&quot;,
+  &quot;connection&quot;: &quot;keep-alive&quot;,
+  &quot;content-length&quot;: &quot;1038&quot;,
+  &quot;content-type&quot;: &quot;text/html; charset=utf-8&quot;,
+  &quot;date&quot;: &quot;Fri, 24 Jul 2026 20:16:00 GMT&quot;,
+  &quot;etag&quot;: &quot;W/\&quot;40e-19f95c4ee40\&quot;&quot;,
+  &quot;keep-alive&quot;: &quot;timeout=72&quot;,
+  &quot;last-modified&quot;: &quot;Fri, 24 Jul 2026 20:15:39 GMT&quot;,
+  &quot;x-ratelimit-limit&quot;: &quot;15000&quot;,
+  &quot;x-ratelimit-remaining&quot;: &quot;14971&quot;,
+  &quot;x-ratelimit-reset&quot;: &quot;48&quot;
+}</code></pre>
+<p><strong>Recommended fix</strong>: Add Content-Security-Policy via a global Fastify onSend hook in server/app.ts (applies to both API and static-asset responses, since both are served by the same createApp() instance) — no need for an extra dependency like @fastify/helmet for a handful of static header values.</p>
+<hr>
+
+<h3>JSON null as the entire body (valid JSON, degenerate shape) leaks internal error detail</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#fff6cf">Medium</span></li>
+  <li><strong>OWASP category</strong>: A05:2021 – Security Misconfiguration</li>
+  <li><strong>Location</strong>: <code>JSON null as the entire body (valid JSON, degenerate shape)</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: The response body for this path contains what looks like a raw JS runtime error message (TypeError/ReferenceError/etc.) rather than a clean, generic error body. server/app.ts&#39;s setErrorHandler only maps ApiError instances to a clean {code, message} — anything else (e.g. a TypeError from destructuring a non-object request.body) falls through to a branch that echoes err.message verbatim at a flat 500.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>JSON null as the entire body (valid JSON, degenerate shape)
+POST http://localhost:4000/api/auth/signup
+Request body: &quot;null&quot;
+Response: 500
+Response body: {&quot;code&quot;:&quot;INTERNAL_ERROR&quot;,&quot;message&quot;:&quot;Cannot read properties of null (reading &#39;name&#39;)&quot;}</code></pre>
+<p><strong>Recommended fix</strong>: In server/app.ts&#39;s setErrorHandler, don&#39;t send err.message for non-ApiError exceptions — always send a fixed generic message (e.g. &quot;Something went wrong.&quot;) for that branch, matching what it already does when err.message isn&#39;t a string. Optionally also harden the specific route (server/routes/auth.ts) to validate request.body is a non-null object before destructuring off it.</p>
+<hr>
+
+<h3>Booking ownership check reveals resource existence via 403 rather than masking it with 404</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#e3f0ff">Low</span></li>
+  <li><strong>OWASP category</strong>: A01:2021 – Broken Access Control</li>
+  <li><strong>Location</strong>: <code>GET /api/bookings/{id}, POST /api/bookings/{id}/cancel</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: Both endpoints correctly reject a non-owner (consistently, via 403 FORBIDDEN — server/lib/httpError.ts), but 403 confirms the booking id exists at all, unlike a 404. Booking ids are unguessable UUIDs, so practical enumeration risk is low, but this tradeoff isn&#39;t currently documented as an intentional choice.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>GET as attacker:
+GET http://localhost:4000/api/bookings/bkg_4bb8ba79-45ba-4a7f-9368-9b357df1562a
+Response: 403
+Response body: {&quot;code&quot;:&quot;FORBIDDEN&quot;,&quot;message&quot;:&quot;You do not have access to this booking.&quot;}
+
+POST cancel as attacker:
+POST http://localhost:4000/api/bookings/bkg_4bb8ba79-45ba-4a7f-9368-9b357df1562a/cancel
+Response: 403
+Response body: {&quot;code&quot;:&quot;FORBIDDEN&quot;,&quot;message&quot;:&quot;You do not have access to this booking.&quot;}</code></pre>
+<p><strong>Recommended fix</strong>: Optional hardening: return 404 (BOOKING_NOT_FOUND) instead of 403 for a non-owned booking id in both server/routes/bookings.ts and server/services/booking.ts, consistent with how MOVIE_NOT_FOUND/SHOW_NOT_FOUND/etc. already mask existence elsewhere in this codebase. Not required — record the current behavior as an accepted tradeoff if no change is made.</p>
+<hr>
+
+<h3>Missing X-Content-Type-Options on a JSON API response</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#e3f0ff">Low</span></li>
+  <li><strong>OWASP category</strong>: A05:2021 – Security Misconfiguration</li>
+  <li><strong>Location</strong>: <code>/api/cities response headers</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: X-Content-Type-Options was not present. Prevents MIME-sniffing.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>GET http://localhost:4000/api/cities
+Response headers: {
+  &quot;connection&quot;: &quot;keep-alive&quot;,
+  &quot;content-length&quot;: &quot;221&quot;,
+  &quot;content-type&quot;: &quot;application/json; charset=utf-8&quot;,
+  &quot;date&quot;: &quot;Fri, 24 Jul 2026 20:16:00 GMT&quot;,
+  &quot;keep-alive&quot;: &quot;timeout=72&quot;,
+  &quot;x-ratelimit-limit&quot;: &quot;15000&quot;,
+  &quot;x-ratelimit-remaining&quot;: &quot;14972&quot;,
+  &quot;x-ratelimit-reset&quot;: &quot;48&quot;
+}</code></pre>
+<p><strong>Recommended fix</strong>: Add X-Content-Type-Options via a global Fastify onSend hook in server/app.ts (applies to both API and static-asset responses, since both are served by the same createApp() instance) — no need for an extra dependency like @fastify/helmet for a handful of static header values.</p>
+<hr>
+
+<h3>Missing Referrer-Policy on a JSON API response</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#e3f0ff">Low</span></li>
+  <li><strong>OWASP category</strong>: A05:2021 – Security Misconfiguration</li>
+  <li><strong>Location</strong>: <code>/api/cities response headers</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: Referrer-Policy was not present. Limits referrer leakage to third parties.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>GET http://localhost:4000/api/cities
+Response headers: {
+  &quot;connection&quot;: &quot;keep-alive&quot;,
+  &quot;content-length&quot;: &quot;221&quot;,
+  &quot;content-type&quot;: &quot;application/json; charset=utf-8&quot;,
+  &quot;date&quot;: &quot;Fri, 24 Jul 2026 20:16:00 GMT&quot;,
+  &quot;keep-alive&quot;: &quot;timeout=72&quot;,
+  &quot;x-ratelimit-limit&quot;: &quot;15000&quot;,
+  &quot;x-ratelimit-remaining&quot;: &quot;14972&quot;,
+  &quot;x-ratelimit-reset&quot;: &quot;48&quot;
+}</code></pre>
+<p><strong>Recommended fix</strong>: Add Referrer-Policy via a global Fastify onSend hook in server/app.ts (applies to both API and static-asset responses, since both are served by the same createApp() instance) — no need for an extra dependency like @fastify/helmet for a handful of static header values.</p>
+<hr>
+
+<h3>Missing X-Content-Type-Options on the served frontend HTML</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#e3f0ff">Low</span></li>
+  <li><strong>OWASP category</strong>: A05:2021 – Security Misconfiguration</li>
+  <li><strong>Location</strong>: <code>/ response headers</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: X-Content-Type-Options was not present. Prevents MIME-sniffing.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>GET http://localhost:4000/
+Response headers: {
+  &quot;accept-ranges&quot;: &quot;bytes&quot;,
+  &quot;cache-control&quot;: &quot;public, max-age=0&quot;,
+  &quot;connection&quot;: &quot;keep-alive&quot;,
+  &quot;content-length&quot;: &quot;1038&quot;,
+  &quot;content-type&quot;: &quot;text/html; charset=utf-8&quot;,
+  &quot;date&quot;: &quot;Fri, 24 Jul 2026 20:16:00 GMT&quot;,
+  &quot;etag&quot;: &quot;W/\&quot;40e-19f95c4ee40\&quot;&quot;,
+  &quot;keep-alive&quot;: &quot;timeout=72&quot;,
+  &quot;last-modified&quot;: &quot;Fri, 24 Jul 2026 20:15:39 GMT&quot;,
+  &quot;x-ratelimit-limit&quot;: &quot;15000&quot;,
+  &quot;x-ratelimit-remaining&quot;: &quot;14971&quot;,
+  &quot;x-ratelimit-reset&quot;: &quot;48&quot;
+}</code></pre>
+<p><strong>Recommended fix</strong>: Add X-Content-Type-Options via a global Fastify onSend hook in server/app.ts (applies to both API and static-asset responses, since both are served by the same createApp() instance) — no need for an extra dependency like @fastify/helmet for a handful of static header values.</p>
+<hr>
+
+<h3>Missing Referrer-Policy on the served frontend HTML</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#e3f0ff">Low</span></li>
+  <li><strong>OWASP category</strong>: A05:2021 – Security Misconfiguration</li>
+  <li><strong>Location</strong>: <code>/ response headers</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: Referrer-Policy was not present. Limits referrer leakage to third parties.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>GET http://localhost:4000/
+Response headers: {
+  &quot;accept-ranges&quot;: &quot;bytes&quot;,
+  &quot;cache-control&quot;: &quot;public, max-age=0&quot;,
+  &quot;connection&quot;: &quot;keep-alive&quot;,
+  &quot;content-length&quot;: &quot;1038&quot;,
+  &quot;content-type&quot;: &quot;text/html; charset=utf-8&quot;,
+  &quot;date&quot;: &quot;Fri, 24 Jul 2026 20:16:00 GMT&quot;,
+  &quot;etag&quot;: &quot;W/\&quot;40e-19f95c4ee40\&quot;&quot;,
+  &quot;keep-alive&quot;: &quot;timeout=72&quot;,
+  &quot;last-modified&quot;: &quot;Fri, 24 Jul 2026 20:15:39 GMT&quot;,
+  &quot;x-ratelimit-limit&quot;: &quot;15000&quot;,
+  &quot;x-ratelimit-remaining&quot;: &quot;14971&quot;,
+  &quot;x-ratelimit-reset&quot;: &quot;48&quot;
+}</code></pre>
+<p><strong>Recommended fix</strong>: Add Referrer-Policy via a global Fastify onSend hook in server/app.ts (applies to both API and static-asset responses, since both are served by the same createApp() instance) — no need for an extra dependency like @fastify/helmet for a handful of static header values.</p>
+<hr>
+
+<h3>Verified: signup endpoint ignores client-supplied isAdmin/role fields</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#eeeeee">Info</span></li>
+  <li><strong>OWASP category</strong>: A04:2021 – Insecure Design (mass assignment)</li>
+  <li><strong>Location</strong>: <code>POST /api/auth/signup</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: server/routes/auth.ts reads name/email/password off request.body individually (no object-spread binding) and server/services/users.ts&#39;s createUser() only inserts an explicit whitelist of fields — a client-supplied isAdmin/role in the signup body had no effect, confirmed live.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>Signup with an extra isAdmin field:
+POST http://localhost:4000/api/auth/signup
+Request body: {&quot;name&quot;:&quot;Mass Assignment Test&quot;,&quot;email&quot;:&quot;mass-assign_1784924158230_a8yymp@example.invalid&quot;,&quot;password&quot;:&quot;SecTest123!&quot;,&quot;isAdmin&quot;:true,&quot;role&quot;:&quot;admin&quot;}
+Response: 200
+Response body: {&quot;id&quot;:&quot;user_3766af04-f5e1-45ea-a95e-7b0504eb9167&quot;,&quot;name&quot;:&quot;Mass Assignment Test&quot;,&quot;email&quot;:&quot;mass-assign_1784924158230_a8yymp@example.invalid&quot;,&quot;isAdmin&quot;:false,&quot;createdAt&quot;:&quot;2026-07-24 20:15:58.378517+00&quot;}</code></pre>
+<p><strong>Recommended fix</strong>: N/A — re-check if createUser()&#39;s input type or the signup handler is ever changed to bind request.body more broadly (e.g. object-spread or a schema that isn&#39;t an explicit allowlist).</p>
+<hr>
+
+<h3>Signup response reveals whether an email is already registered</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#eeeeee">Info</span></li>
+  <li><strong>OWASP category</strong>: A01:2021 – Broken Access Control (account enumeration)</li>
+  <li><strong>Location</strong>: <code>POST /api/auth/signup</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: A distinct EMAIL_TAKEN/409 on duplicate signup lets a caller enumerate registered emails. This is a common, often-deliberate UX tradeoff — note this app&#39;s login endpoint explicitly avoids the same signal (CLAUDE.md: &quot;Login failures always return the same generic ... message ... no user-enumeration signal&quot;), but that documented protection doesn&#39;t extend to signup. Recorded so the decision is visible, not because it&#39;s treated as a vulnerability on its own.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>Second signup with the same email:
+POST http://localhost:4000/api/auth/signup
+Request body: {&quot;name&quot;:&quot;Dup Test 2&quot;,&quot;email&quot;:&quot;dup_1784924159322_dup@example.invalid&quot;,&quot;password&quot;:&quot;SecTest123!&quot;}
+Response: 409
+Response body: {&quot;code&quot;:&quot;EMAIL_TAKEN&quot;,&quot;message&quot;:&quot;An account with this email already exists.&quot;}</code></pre>
+<p><strong>Recommended fix</strong>: No fix required unless enumeration resistance is an explicit goal for signup specifically; if it is, this would need to change to a generic response, unlike the login path which already handles this correctly.</p>
+<hr>
+
+<h3>Verified: login rate limiting engages after 11 rapid failed attempts</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#eeeeee">Info</span></li>
+  <li><strong>OWASP category</strong>: A07:2021 – Identification and Authentication Failures</li>
+  <li><strong>Location</strong>: <code>POST /api/auth/login</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: A 429 appeared at attempt 11 of 11, consistent with server/routes/auth.ts&#39;s documented max: 10 / 15 minutes, keyed by IP+email.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>Attempt 11 (first 429):
+POST http://localhost:4000/api/auth/login
+Request body: {&quot;email&quot;:&quot;sec-owner_1784924155367_tfj8zf@example.invalid&quot;,&quot;password&quot;:&quot;wrong-password-10&quot;}
+Response: 429
+Response body: {&quot;code&quot;:&quot;INTERNAL_ERROR&quot;,&quot;message&quot;:&quot;Rate limit exceeded, retry in 15 minutes&quot;}</code></pre>
+<p><strong>Recommended fix</strong>: N/A — documented behavior verified live.</p>
+<hr>
+
+<h3>CSRF-via-same-origin assumption verified: no CORS opening found</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#eeeeee">Info</span></li>
+  <li><strong>OWASP category</strong>: A01:2021 – Broken Access Control</li>
+  <li><strong>Location</strong>: <code>server/app.ts (no CORS plugin registered)</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: No Access-Control-Allow-Origin header was returned for a cross-origin request, consistent with this app&#39;s single-artifact, same-origin-only deployment (CLAUDE.md). Recorded so this assumption is known-checked as of this run, not silently assumed. This app has no CSRF tokens at all, so this check — plus SameSite=lax (verified in tests/03-auth-session.js) — is the entire CSRF defense; re-run after any change that introduces a second origin or a CORS config.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>GET /api/bookings/me with Origin: https://evil.example
+GET http://localhost:4000/api/bookings/me
+Response: 200
+Response body: [{&quot;id&quot;:&quot;bkg_4bb8ba79-45ba-4a7f-9368-9b357df1562a&quot;,&quot;userId&quot;:&quot;user_2d186859-8cd2-431d-b9c5-bbc30668e923&quot;,&quot;showId&quot;:&quot;aurora-kurla-scr1__oppenheimer__d0__t2&quot;,&quot;seatIds&quot;:[&quot;A1&quot;],&quot;tierBreakdown&quot;:[{&quot;count&quot;:1,&quot;tierId&quot;:&quot;classic&quot;,&quot;tierName&quot;:&quot;Classic&quot;,&quot;pricePerSeat&quot;:180}],&quot;subtotal&quot;:180,&quot;convenienceFee&quot;:9,&quot;total&quot;:189,&quot;status&quot;:&quot;confirmed&quot;,&quot;qrPayload&quot;:&quot;{\&quot;b\&quot;:\&quot;bkg_4bb8ba79-45ba-4a7f-9368-9b357df1562a\&quot;,\&quot;s\&quot;:\&quot;aurora-kurla-scr1__oppenheimer__d0__t2\&quot;,\&quot;seats\&quot;:[\&quot;A1\&quot;],\&quot;v\&quot;:1}&quot;,&quot;createdAt&quot;:&quot;2026-07-24 20:15:57.218+00&quot;}]</code></pre>
+<p><strong>Recommended fix</strong>: N/A — re-run this check any time a second frontend origin, a public API consumer, or a CORS config is introduced.</p>
+<hr>
+
+<h3>Strict-Transport-Security not verifiable on a JSON API response (plain HTTP target)</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#eeeeee">Info</span></li>
+  <li><strong>OWASP category</strong>: A05:2021 – Security Misconfiguration</li>
+  <li><strong>Location</strong>: <code>/api/cities response headers</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: This run targeted a local http:// instance. HSTS is meaningless over plain HTTP from a browser&#39;s perspective — re-check against the real Render (TLS-terminated) deployment.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>GET http://localhost:4000/api/cities
+Response headers: {
+  &quot;connection&quot;: &quot;keep-alive&quot;,
+  &quot;content-length&quot;: &quot;221&quot;,
+  &quot;content-type&quot;: &quot;application/json; charset=utf-8&quot;,
+  &quot;date&quot;: &quot;Fri, 24 Jul 2026 20:16:00 GMT&quot;,
+  &quot;keep-alive&quot;: &quot;timeout=72&quot;,
+  &quot;x-ratelimit-limit&quot;: &quot;15000&quot;,
+  &quot;x-ratelimit-remaining&quot;: &quot;14972&quot;,
+  &quot;x-ratelimit-reset&quot;: &quot;48&quot;
+}</code></pre>
+<p><strong>Recommended fix</strong>: N/A locally — verify HSTS is present on the deployed Render instance.</p>
+<hr>
+
+<h3>Strict-Transport-Security not verifiable on the served frontend HTML (plain HTTP target)</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#eeeeee">Info</span></li>
+  <li><strong>OWASP category</strong>: A05:2021 – Security Misconfiguration</li>
+  <li><strong>Location</strong>: <code>/ response headers</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: This run targeted a local http:// instance. HSTS is meaningless over plain HTTP from a browser&#39;s perspective — re-check against the real Render (TLS-terminated) deployment.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>GET http://localhost:4000/
+Response headers: {
+  &quot;accept-ranges&quot;: &quot;bytes&quot;,
+  &quot;cache-control&quot;: &quot;public, max-age=0&quot;,
+  &quot;connection&quot;: &quot;keep-alive&quot;,
+  &quot;content-length&quot;: &quot;1038&quot;,
+  &quot;content-type&quot;: &quot;text/html; charset=utf-8&quot;,
+  &quot;date&quot;: &quot;Fri, 24 Jul 2026 20:16:00 GMT&quot;,
+  &quot;etag&quot;: &quot;W/\&quot;40e-19f95c4ee40\&quot;&quot;,
+  &quot;keep-alive&quot;: &quot;timeout=72&quot;,
+  &quot;last-modified&quot;: &quot;Fri, 24 Jul 2026 20:15:39 GMT&quot;,
+  &quot;x-ratelimit-limit&quot;: &quot;15000&quot;,
+  &quot;x-ratelimit-remaining&quot;: &quot;14971&quot;,
+  &quot;x-ratelimit-reset&quot;: &quot;48&quot;
+}</code></pre>
+<p><strong>Recommended fix</strong>: N/A locally — verify HSTS is present on the deployed Render instance.</p>
+<hr>
+
+<h3>Verified: all 2 local .env file(s) are gitignored</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#eeeeee">Info</span></li>
+  <li><strong>OWASP category</strong>: A02:2021 – Cryptographic Failures</li>
+  <li><strong>Location</strong>: <code>./.env.test, ./.env</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: .gitignore&#39;s `.env` and `.env.*` (with a `!.env.example` exception) entries were confirmed via git check-ignore -v against each real local-config file found, not just assumed from the pattern existing in .gitignore.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>git check-ignore -v &quot;./.env.test&quot; -&gt; .gitignore:18:.env.*	./.env.test
+git check-ignore -v &quot;./.env&quot; -&gt; .gitignore:17:.env	./.env</code></pre>
+<p><strong>Recommended fix</strong>: N/A — re-run if a new .env-style file is ever added.</p>
+<hr>
+</body>
+</html>

@@ -26,8 +26,9 @@ export async function bookingsRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { id: string } }>('/bookings/:id', { preHandler: requireAuth }, async (request) => {
     const [row] = await db.select().from(bookings).where(eq(bookings.id, request.params.id)).limit(1)
-    if (!row) throw new ApiError('BOOKING_NOT_FOUND', 'Booking not found.')
-    if (row.userId !== request.userId) throw new ApiError('FORBIDDEN', 'You do not have access to this booking.')
+    // Same existence-masking as cancelBooking (server/services/booking.ts) — a non-owned id
+    // and a missing id both 404.
+    if (!row || row.userId !== request.userId) throw new ApiError('BOOKING_NOT_FOUND', 'Booking not found.')
     return toDomainBooking(row)
   })
 }

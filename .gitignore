@@ -38,3 +38,10 @@ e2e/playwright-report
 
 # k6 load-test artifacts — run outputs, not source
 load-test/reports
+
+# security-test artifacts — .state holds live session cookies for
+# throwaway test identities (not secrets worth keeping, but not source
+# either); raw/ holds per-category JSON that report.md/report.html already
+# summarize
+security-test/.state
+security-test/reports/*/raw

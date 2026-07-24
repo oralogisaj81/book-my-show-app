@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CineHall security test report</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    max-width: 900px; margin: 0 auto; padding: 2.5rem 1.5rem 5rem;
+    line-height: 1.55; color: #1c1c1e; background: #fff;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e6e6e6; background: #121212; }
+    table { border-color: #333 !important; }
+    th { background: #1f1f1f !important; }
+    tr:nth-child(even) td { background: #181818 !important; }
+    code, pre { background: #1e1e1e !important; color: #e6e6e6 !important; }
+    hr { border-color: #333 !important; }
+  }
+  h1 { font-size: 1.7rem; border-bottom: 2px solid #ddd; padding-bottom: .4rem; }
+  h2 { font-size: 1.3rem; margin-top: 2rem; border-bottom: 1px solid #ddd; padding-bottom: .3rem; }
+  h3 { font-size: 1.05rem; margin-top: 1.8rem; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: .92rem; }
+  th, td { border: 1px solid #ccc; padding: .45rem .7rem; text-align: left; vertical-align: top; }
+  th { background: #f2f2f2; }
+  tr:nth-child(even) td { background: #fafafa; }
+  code { background: #f0f0f0; padding: .1rem .35rem; border-radius: 3px; font-size: .88em; }
+  pre { background: #f5f5f5; padding: .9rem 1rem; border-radius: 6px; overflow-x: auto; font-size: .82rem; white-space: pre-wrap; word-break: break-word; }
+  pre code { background: none; padding: 0; }
+  hr { border: none; border-top: 1px solid #ddd; margin: 2rem 0; }
+  .badge { display: inline-block; padding: .1rem .55rem; border-radius: 999px; font-size: .78rem; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>CineHall security test report</h1>
+<p>Generated: 2026-07-24T20:36:59.464Z</p>
+<h2>Executive summary</h2>
+<table>
+<tr><th>Severity</th><th>Count</th></tr>
+<tr><td><span class="badge" style="background:#ffe0e0">Critical</span></td><td>0</td></tr>
+<tr><td><span class="badge" style="background:#ffe9d6">High</span></td><td>1</td></tr>
+<tr><td><span class="badge" style="background:#fff6cf">Medium</span></td><td>1</td></tr>
+<tr><td><span class="badge" style="background:#e3f0ff">Low</span></td><td>0</td></tr>
+<tr><td><span class="badge" style="background:#eeeeee">Info</span></td><td>8</td></tr>
+</table>
+<h2>Findings</h2>
+
+<h3>2 High/Critical npm dependency vulnerabilities</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#ffe9d6">High</span></li>
+  <li><strong>OWASP category</strong>: A06:2021 – Vulnerable and Outdated Components</li>
+  <li><strong>Location</strong>: <code>package.json / package-lock.json</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: npm audit reported: react-router@7.12.0 - 8.2.0 (high), react-router-dom@&gt;=7.12.0-pre.0 (high)</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>npm audit --omit=dev --json
+High/Critical: react-router@7.12.0 - 8.2.0 (high), react-router-dom@&gt;=7.12.0-pre.0 (high)</code></pre>
+<p><strong>Recommended fix</strong>: Run `npm audit fix` where possible; for vulnerabilities without a compatible fix, evaluate whether the vulnerable code path is actually reachable in this app before deciding on an upgrade/replace/accept-risk call.</p>
+<hr>
+
+<h3>Logout cannot invalidate a session token before its natural 30-day expiry</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#fff6cf">Medium</span></li>
+  <li><strong>OWASP category</strong>: A07:2021 – Identification and Authentication Failures</li>
+  <li><strong>Location</strong>: <code>POST /api/auth/logout, server/lib/session.ts verifySession()</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: This app&#39;s stateless HMAC-signed session cookie (a deliberate choice per CLAUDE.md, to avoid a DB-backed session table) has no server-side revocation mechanism — verifySession() only checks the signature and expiresAt. /api/auth/logout only clears the cookie client-side; a token captured before logout (XSS, a synced/shared browser profile, a proxy log) remains fully valid for the rest of its 30-day SESSION_DURATION_MS window even after the user &quot;logs out&quot;.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>GET /api/auth/me replaying the pre-logout session cookie, after calling /api/auth/logout:
+GET http://localhost:4000/api/auth/me
+Response: 200
+Response body: {&quot;id&quot;:&quot;user_2878c7a2-8d9d-41f1-a83e-335962680f63&quot;,&quot;name&quot;:&quot;Security Test 1784925413845_j6y2hd&quot;,&quot;email&quot;:&quot;sec-attacker_1784925413845_j6y2hd@example.invalid&quot;,&quot;isAdmin&quot;:false,&quot;createdAt&quot;:&quot;2026-07-24 20:36:53.982848+00&quot;}</code></pre>
+<p><strong>Recommended fix</strong>: If real logout-time revocation is wanted, add a minimal server-side check (e.g. a small denylist table of invalidated token signatures, or a per-user &quot;session epoch&quot;/tokenVersion column checked in verifySession() and bumped on logout) — this is the smallest change that preserves the existing stateless-cookie design for the common case while closing the post-logout replay window. Otherwise, document this as an accepted tradeoff and consider shortening SESSION_DURATION_MS.</p>
+<hr>
+
+<h3>Verified: booking ownership check consistently rejects a non-owner via 404</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#eeeeee">Info</span></li>
+  <li><strong>OWASP category</strong>: A01:2021 – Broken Access Control</li>
+  <li><strong>Location</strong>: <code>GET /api/bookings/{id}, POST /api/bookings/{id}/cancel</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: Both endpoints return BOOKING_NOT_FOUND/404 for a non-owned booking id, masking existence — consistent with MOVIE_NOT_FOUND/SHOW_NOT_FOUND/etc. elsewhere in this codebase.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>GET as attacker:
+GET http://localhost:4000/api/bookings/bkg_7b01ccaf-62f0-4eae-82fa-cf789e09b616
+Response: 404
+Response body: {&quot;code&quot;:&quot;BOOKING_NOT_FOUND&quot;,&quot;message&quot;:&quot;Booking not found.&quot;}
+
+POST cancel as attacker:
+POST http://localhost:4000/api/bookings/bkg_7b01ccaf-62f0-4eae-82fa-cf789e09b616/cancel
+Response: 404
+Response body: {&quot;code&quot;:&quot;BOOKING_NOT_FOUND&quot;,&quot;message&quot;:&quot;Booking not found.&quot;}</code></pre>
+<p><strong>Recommended fix</strong>: N/A — verified live.</p>
+<hr>
+
+<h3>Verified: signup endpoint ignores client-supplied isAdmin/role fields</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#eeeeee">Info</span></li>
+  <li><strong>OWASP category</strong>: A04:2021 – Insecure Design (mass assignment)</li>
+  <li><strong>Location</strong>: <code>POST /api/auth/signup</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: server/routes/auth.ts reads name/email/password off request.body individually (no object-spread binding) and server/services/users.ts&#39;s createUser() only inserts an explicit whitelist of fields — a client-supplied isAdmin/role in the signup body had no effect, confirmed live.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>Signup with an extra isAdmin field:
+POST http://localhost:4000/api/auth/signup
+Request body: {&quot;name&quot;:&quot;Mass Assignment Test&quot;,&quot;email&quot;:&quot;mass-assign_1784925416464_5355n0@example.invalid&quot;,&quot;password&quot;:&quot;SecTest123!&quot;,&quot;isAdmin&quot;:true,&quot;role&quot;:&quot;admin&quot;}
+Response: 200
+Response body: {&quot;id&quot;:&quot;user_875cd50d-a4a2-44f0-8de5-a26973a5c052&quot;,&quot;name&quot;:&quot;Mass Assignment Test&quot;,&quot;email&quot;:&quot;mass-assign_1784925416464_5355n0@example.invalid&quot;,&quot;isAdmin&quot;:false,&quot;createdAt&quot;:&quot;2026-07-24 20:36:56.622667+00&quot;}</code></pre>
+<p><strong>Recommended fix</strong>: N/A — re-check if createUser()&#39;s input type or the signup handler is ever changed to bind request.body more broadly (e.g. object-spread or a schema that isn&#39;t an explicit allowlist).</p>
+<hr>
+
+<h3>Signup response reveals whether an email is already registered</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#eeeeee">Info</span></li>
+  <li><strong>OWASP category</strong>: A01:2021 – Broken Access Control (account enumeration)</li>
+  <li><strong>Location</strong>: <code>POST /api/auth/signup</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: A distinct EMAIL_TAKEN/409 on duplicate signup lets a caller enumerate registered emails. This is a common, often-deliberate UX tradeoff — note this app&#39;s login endpoint explicitly avoids the same signal (CLAUDE.md: &quot;Login failures always return the same generic ... message ... no user-enumeration signal&quot;), but that documented protection doesn&#39;t extend to signup. Recorded so the decision is visible, not because it&#39;s treated as a vulnerability on its own.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>Second signup with the same email:
+POST http://localhost:4000/api/auth/signup
+Request body: {&quot;name&quot;:&quot;Dup Test 2&quot;,&quot;email&quot;:&quot;dup_1784925417573_dup@example.invalid&quot;,&quot;password&quot;:&quot;SecTest123!&quot;}
+Response: 409
+Response body: {&quot;code&quot;:&quot;EMAIL_TAKEN&quot;,&quot;message&quot;:&quot;An account with this email already exists.&quot;}</code></pre>
+<p><strong>Recommended fix</strong>: No fix required unless enumeration resistance is an explicit goal for signup specifically; if it is, this would need to change to a generic response, unlike the login path which already handles this correctly.</p>
+<hr>
+
+<h3>Verified: login rate limiting engages after 11 rapid failed attempts</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#eeeeee">Info</span></li>
+  <li><strong>OWASP category</strong>: A07:2021 – Identification and Authentication Failures</li>
+  <li><strong>Location</strong>: <code>POST /api/auth/login</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: A 429 appeared at attempt 11 of 11, consistent with server/routes/auth.ts&#39;s documented max: 10 / 15 minutes, keyed by IP+email.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>Attempt 11 (first 429):
+POST http://localhost:4000/api/auth/login
+Request body: {&quot;email&quot;:&quot;sec-owner_1784925413723_zn1cg4@example.invalid&quot;,&quot;password&quot;:&quot;wrong-password-10&quot;}
+Response: 429
+Response body: {&quot;code&quot;:&quot;INTERNAL_ERROR&quot;,&quot;message&quot;:&quot;Rate limit exceeded, retry in 15 minutes&quot;}</code></pre>
+<p><strong>Recommended fix</strong>: N/A — documented behavior verified live.</p>
+<hr>
+
+<h3>CSRF-via-same-origin assumption verified: no CORS opening found</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#eeeeee">Info</span></li>
+  <li><strong>OWASP category</strong>: A01:2021 – Broken Access Control</li>
+  <li><strong>Location</strong>: <code>server/app.ts (no CORS plugin registered)</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: No Access-Control-Allow-Origin header was returned for a cross-origin request, consistent with this app&#39;s single-artifact, same-origin-only deployment (CLAUDE.md). Recorded so this assumption is known-checked as of this run, not silently assumed. This app has no CSRF tokens at all, so this check — plus SameSite=lax (verified in tests/03-auth-session.js) — is the entire CSRF defense; re-run after any change that introduces a second origin or a CORS config.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>GET /api/bookings/me with Origin: https://evil.example
+GET http://localhost:4000/api/bookings/me
+Response: 200
+Response body: [{&quot;id&quot;:&quot;bkg_7b01ccaf-62f0-4eae-82fa-cf789e09b616&quot;,&quot;userId&quot;:&quot;user_2a302187-6841-46a1-a219-f938b7a3168f&quot;,&quot;showId&quot;:&quot;aurora-kurla-scr1__oppenheimer__d0__t2&quot;,&quot;seatIds&quot;:[&quot;B9&quot;],&quot;tierBreakdown&quot;:[{&quot;count&quot;:1,&quot;tierId&quot;:&quot;classic&quot;,&quot;tierName&quot;:&quot;Classic&quot;,&quot;pricePerSeat&quot;:180}],&quot;subtotal&quot;:180,&quot;convenienceFee&quot;:9,&quot;total&quot;:189,&quot;status&quot;:&quot;confirmed&quot;,&quot;qrPayload&quot;:&quot;{\&quot;b\&quot;:\&quot;bkg_7b01ccaf-62f0-4eae-82fa-cf789e09b616\&quot;,\&quot;s\&quot;:\&quot;aurora-kurla-scr1__oppenheimer__d0__t2\&quot;,\&quot;seats\&quot;:[\&quot;B9\&quot;],\&quot;v\&quot;:1}&quot;,&quot;createdAt&quot;:&quot;2026-07-24 20:36:55.473+00&quot;}]</code></pre>
+<p><strong>Recommended fix</strong>: N/A — re-run this check any time a second frontend origin, a public API consumer, or a CORS config is introduced.</p>
+<hr>
+
+<h3>Strict-Transport-Security not verifiable on a JSON API response (plain HTTP target)</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#eeeeee">Info</span></li>
+  <li><strong>OWASP category</strong>: A05:2021 – Security Misconfiguration</li>
+  <li><strong>Location</strong>: <code>/api/cities response headers</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: This run targeted a local http:// instance. HSTS is meaningless over plain HTTP from a browser&#39;s perspective — re-check against the real Render (TLS-terminated) deployment.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>GET http://localhost:4000/api/cities
+Response headers: {
+  &quot;connection&quot;: &quot;keep-alive&quot;,
+  &quot;content-length&quot;: &quot;221&quot;,
+  &quot;content-security-policy&quot;: &quot;default-src &#39;self&#39;; script-src &#39;self&#39;; style-src &#39;self&#39; &#39;unsafe-inline&#39; https://fonts.googleapis.com; font-src &#39;self&#39; data: https://fonts.gstatic.com; img-src &#39;self&#39; data: https://image.tmdb.org; connect-src &#39;self&#39;; frame-ancestors &#39;none&#39;; object-src &#39;none&#39;; base-uri &#39;self&#39;; form-action &#39;self&#39;&quot;,
+  &quot;content-type&quot;: &quot;application/json; charset=utf-8&quot;,
+  &quot;date&quot;: &quot;Fri, 24 Jul 2026 20:36:58 GMT&quot;,
+  &quot;keep-alive&quot;: &quot;timeout=72&quot;,
+  &quot;referrer-policy&quot;: &quot;strict-origin-when-cross-origin&quot;,
+  &quot;strict-transport-security&quot;: &quot;max-age=31536000; includeSubDomains&quot;,
+  &quot;x-content-type-options&quot;: &quot;nosniff&quot;,
+  &quot;x-frame-options&quot;: &quot;DENY&quot;,
+  &quot;x-ratelimit-limit&quot;: &quot;15000&quot;,
+  &quot;x-ratelimit-remaining&quot;: &quot;14973&quot;,
+  &quot;x-ratelimit-reset&quot;: &quot;55&quot;
+}</code></pre>
+<p><strong>Recommended fix</strong>: N/A locally — verify HSTS is present on the deployed Render instance.</p>
+<hr>
+
+<h3>Strict-Transport-Security not verifiable on the served frontend HTML (plain HTTP target)</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#eeeeee">Info</span></li>
+  <li><strong>OWASP category</strong>: A05:2021 – Security Misconfiguration</li>
+  <li><strong>Location</strong>: <code>/ response headers</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: This run targeted a local http:// instance. HSTS is meaningless over plain HTTP from a browser&#39;s perspective — re-check against the real Render (TLS-terminated) deployment.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>GET http://localhost:4000/
+Response headers: {
+  &quot;accept-ranges&quot;: &quot;bytes&quot;,
+  &quot;cache-control&quot;: &quot;public, max-age=0&quot;,
+  &quot;connection&quot;: &quot;keep-alive&quot;,
+  &quot;content-length&quot;: &quot;1038&quot;,
+  &quot;content-security-policy&quot;: &quot;default-src &#39;self&#39;; script-src &#39;self&#39;; style-src &#39;self&#39; &#39;unsafe-inline&#39; https://fonts.googleapis.com; font-src &#39;self&#39; data: https://fonts.gstatic.com; img-src &#39;self&#39; data: https://image.tmdb.org; connect-src &#39;self&#39;; frame-ancestors &#39;none&#39;; object-src &#39;none&#39;; base-uri &#39;self&#39;; form-action &#39;self&#39;&quot;,
+  &quot;content-type&quot;: &quot;text/html; charset=utf-8&quot;,
+  &quot;date&quot;: &quot;Fri, 24 Jul 2026 20:36:58 GMT&quot;,
+  &quot;etag&quot;: &quot;W/\&quot;40e-19f95d742f5\&quot;&quot;,
+  &quot;keep-alive&quot;: &quot;timeout=72&quot;,
+  &quot;last-modified&quot;: &quot;Fri, 24 Jul 2026 20:35:40 GMT&quot;,
+  &quot;referrer-policy&quot;: &quot;strict-origin-when-cross-origin&quot;,
+  &quot;strict-transport-security&quot;: &quot;max-age=31536000; includeSubDomains&quot;,
+  &quot;x-content-type-options&quot;: &quot;nosniff&quot;,
+  &quot;x-frame-options&quot;: &quot;DENY&quot;,
+  &quot;x-ratelimit-limit&quot;: &quot;15000&quot;,
+  &quot;x-ratelimit-remaining&quot;: &quot;14972&quot;,
+  &quot;x-ratelimit-reset&quot;: &quot;55&quot;
+}</code></pre>
+<p><strong>Recommended fix</strong>: N/A locally — verify HSTS is present on the deployed Render instance.</p>
+<hr>
+
+<h3>Verified: all 2 local .env file(s) are gitignored</h3>
+<ul>
+  <li><strong>Severity</strong>: <span class="badge" style="background:#eeeeee">Info</span></li>
+  <li><strong>OWASP category</strong>: A02:2021 – Cryptographic Failures</li>
+  <li><strong>Location</strong>: <code>./.env.test, ./.env</code></li>
+  <li><strong>Status</strong>: Open</li>
+</ul>
+<p><strong>Description</strong>: .gitignore&#39;s `.env` and `.env.*` (with a `!.env.example` exception) entries were confirmed via git check-ignore -v against each real local-config file found, not just assumed from the pattern existing in .gitignore.</p>
+<p><strong>Evidence</strong>:</p>
+<pre><code>git check-ignore -v &quot;./.env.test&quot; -&gt; .gitignore:18:.env.*	./.env.test
+git check-ignore -v &quot;./.env&quot; -&gt; .gitignore:17:.env	./.env</code></pre>
+<p><strong>Recommended fix</strong>: N/A — re-run if a new .env-style file is ever added.</p>
+<hr>
+</body>
+</html>

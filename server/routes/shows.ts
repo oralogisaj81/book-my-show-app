@@ -35,11 +35,15 @@ export async function showsRoutes(app: FastifyInstance) {
     return computeSeatMap(request.params.id)
   })
 
-  app.post<{ Params: { id: string }; Body: { seatIds: string[]; holderId: string } }>(
+  app.post<{ Params: { id: string }; Body: { seatIds: string[]; holderId?: string } }>(
     '/shows/:id/hold',
     { preHandler: requireAuth },
     async (request) => {
-      return holdSeats(request.params.id, request.body.seatIds, request.body.holderId)
+      // holderId is derived from the session, never trusted from the request body — matching
+      // the pattern already used for confirmBooking/cancelBooking/bookings/me (CLAUDE.md).
+      // The body may still carry a holderId field for compatibility with existing callers; it
+      // is intentionally ignored.
+      return holdSeats(request.params.id, request.body.seatIds, request.userId!)
     },
   )
 }

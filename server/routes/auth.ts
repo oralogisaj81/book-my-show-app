@@ -49,16 +49,34 @@ function isUniqueViolation(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === '23505'
 }
 
+// Fastify's JSON body parser accepts any valid JSON value, not just objects (a bare `null`,
+// number, or string is still valid JSON) — without this, destructuring a field off a non-object
+// body throws an uncaught TypeError instead of a clean 400. request.body's declared type
+// (via each route's Body generic) is a compile-time-only annotation, not a runtime guarantee,
+// so this check is a plain boolean rather than a type-narrowing assertion.
+function requireBodyObject(body: unknown): void {
+  if (typeof body !== 'object' || body === null) {
+    throw new ApiError('VALIDATION_ERROR', 'Request body must be a JSON object.')
+  }
+}
+
 export async function authRoutes(app: FastifyInstance) {
   app.post<{ Body: { name: string; email: string; password: string } }>(
     '/auth/signup',
     AUTH_RATE_LIMIT,
     async (request, reply) => {
+      requireBodyObject(request.body)
       const name = request.body.name?.trim()
       const email = request.body.email?.trim().toLowerCase()
       const { password } = request.body
 
       if (!name) throw new ApiError('VALIDATION_ERROR', 'Please enter your name.')
+      // Defense-in-depth: the frontend already renders this via React's default text
+      // interpolation (never dangerouslySetInnerHTML), but rejecting markup-shaped input here
+      // means a name field can never become a stored-XSS vector even if that changes later.
+      if (/[<>]/.test(name)) {
+        throw new ApiError('VALIDATION_ERROR', 'Name cannot contain < or > characters.')
+      }
       if (!email || !EMAIL_REGEX.test(email)) {
         throw new ApiError('VALIDATION_ERROR', 'Please enter a valid email address.')
       }
@@ -86,6 +104,7 @@ export async function authRoutes(app: FastifyInstance) {
   )
 
   app.post<{ Body: { email: string; password: string } }>('/auth/login', AUTH_RATE_LIMIT, async (request, reply) => {
+    requireBodyObject(request.body)
     const email = request.body.email?.trim().toLowerCase()
     const { password } = request.body
     // Same message whether the email doesn't exist or the password is wrong — no enumeration signal.

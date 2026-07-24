@@ -32,6 +32,35 @@ export function createApp() {
   // headroom over the measured combined peak; revisit alongside nfr-config.json if that changes.
   app.register(fastifyRateLimit, { max: 15000, timeWindow: '1 minute' })
 
+  // Applied globally (not inside the /api-prefixed plugin) so it covers both API responses and
+  // the static frontend served below — same-artifact deployment means both come from this one
+  // Fastify instance. CSP's script/style/font/img allowlist matches this app's actual external
+  // resources: Google Fonts (index.html's <link> tags) and TMDB poster/backdrop images
+  // (server/db/seed-data/movies.ts). connect-src is 'self' only — the frontend never calls a
+  // cross-origin API. HSTS is sent unconditionally; browsers only honor it on secure origins,
+  // so it's inert (not wrong) over local plain HTTP.
+  const CSP = [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' data: https://fonts.gstatic.com",
+    "img-src 'self' data: https://image.tmdb.org",
+    "connect-src 'self'",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+  ].join('; ')
+
+  app.addHook('onSend', (_request, reply, payload, done) => {
+    reply.header('Content-Security-Policy', CSP)
+    reply.header('X-Content-Type-Options', 'nosniff')
+    reply.header('X-Frame-Options', 'DENY')
+    reply.header('Referrer-Policy', 'strict-origin-when-cross-origin')
+    reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+    done(null, payload)
+  })
+
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof ApiError) {
       return reply.status(statusForErrorCode(error.code)).send({ code: error.code, message: error.message })
@@ -42,7 +71,12 @@ export function createApp() {
     const err = error as { statusCode?: unknown; message?: unknown }
     const status = typeof err.statusCode === 'number' ? err.statusCode : 500
     app.log.error(error)
-    const message = typeof err.message === 'string' ? err.message : 'Something went wrong.'
+    // A genuine 4xx from Fastify or a plugin (body-parser errors, rate-limit's 429) already
+    // carries a safe, pre-written message meant for clients. A 500, by contrast, is always an
+    // unexpected runtime exception (e.g. a TypeError from malformed input reaching code that
+    // assumed a well-shaped body) whose message can leak internal implementation detail —
+    // never echo it verbatim.
+    const message = status < 500 && typeof err.message === 'string' ? err.message : 'Something went wrong.'
     return reply.status(status).send({ code: 'INTERNAL_ERROR', message })
   })
 

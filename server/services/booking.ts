@@ -51,8 +51,11 @@ export async function confirmBooking(holdId: string, userId: string): Promise<Bo
 export async function cancelBooking(bookingId: string, userId: string): Promise<Booking> {
   return db.transaction(async (tx) => {
     const [booking] = await tx.select().from(bookings).where(eq(bookings.id, bookingId)).limit(1)
-    if (!booking) throw new ApiError('BOOKING_NOT_FOUND', 'Booking not found.')
-    if (booking.userId !== userId) throw new ApiError('FORBIDDEN', 'You do not have access to this booking.')
+    // A non-owned id and a genuinely-missing id return the same BOOKING_NOT_FOUND/404 —
+    // masking existence, consistent with how MOVIE_NOT_FOUND/SHOW_NOT_FOUND/etc. behave
+    // elsewhere in this codebase — rather than leaking "this booking exists, it's just not
+    // yours" via a distinct 403.
+    if (!booking || booking.userId !== userId) throw new ApiError('BOOKING_NOT_FOUND', 'Booking not found.')
     if (booking.status === 'cancelled') return toDomainBooking(booking)
     const [updated] = await tx
       .update(bookings)
