@@ -69,6 +69,19 @@ load-testing a deployed environment. Traffic mix and thresholds are calibrated f
 `load-test/nfr-config.json`; reports land in `load-test/reports/<timestamp>[-label]/`
 (set `REPORT_LABEL` to tag a run, e.g. for before/after comparisons).
 
+`security-test/` is a similarly standalone suite (also not wired into `npm run test:*`)
+against a running server:
+
+```bash
+security-test/scripts/run-security-test.sh   # setup (shared identity pool) + every tests/*.js + report
+```
+
+Same localhost-only guard (`ALLOW_REMOTE=1` to override) as `load-test/`. `lib/setup.js`
+creates one shared pool of identities up front specifically to stay under the same
+`/api/auth/signup` 10-req/15min rate limit the e2e suite budgets for, rather than each
+`tests/*.js` category signing up its own; results land in `security-test/reports/<timestamp>/`
+(raw per-category JSON plus a generated report).
+
 ## Architecture
 
 **Single artifact, no separate frontend/backend deploys.** `npm run build` compiles the
